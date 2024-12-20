@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+contract Presale is Ownable, ReentrancyGuard {
+    using ECDSA for bytes32;
+    using SafeERC20 for IERC20;
+
+    IERC20 public immutable USDT;
+
+    uint256 public MIN_CONTRIBUTION;
+    uint256 public MAX_CONTRIBUTION;
+    uint256 public HARD_CAP;
+    uint256 public SOFT_CAP;
+
+    uint256 public totalContributions;
+    mapping(address => uint256) public contributions;
+    address public signerAddress;
+    bool public isActive;
+    bool public isClosed;
+    bool public refundsAllowed;
+
+    mapping(address => bool) public refunded;
+
+    event Contribution(address indexed contributor, uint256 amount, uint256 timestamp);
+    event PresaleClosed(uint256 timestamp, bool refundsAllowed);
+    event FundsWithdrawn(uint256 amount, uint256 timestamp);
+    event Refund(address indexed contributor, uint256 amount, uint256 timestamp);
+
+    constructor(
+        address _usdtAddress,
+        address _signerAddress,
+        uint256 _minContribution,
+        uint256 _maxContribution,
+        uint256 _hardCap,
+        uint256 _softCap
+    ) {
+        require(_usdtAddress != address(0), "Invalid USDT address");
+        require(_signerAddress != address(0), "Invalid signer address");
+
+        USDT = IERC20(_usdtAddress);
+        signerAddress = _signerAddress;
+        MIN_CONTRIBUTION = _minContribution;
+        MAX_CONTRIBUTION = _maxContribution;
+        HARD_CAP = _hardCap;
+        SOFT_CAP = _softCap;
+        isActive = true;
+    }
+
+    function withdrawFunds() external onlyOwner nonReentrant {
+        require(isClosed, "Presale must be closed");
+        uint256 balance = USDT.balanceOf(address(this));
+        require(balance > 0, "No funds to withdraw");
+
+        // Vulnerable code: transfer tokens before setting isActive to false
+        USDT.safeTransfer(owner(), balance);
+        isActive = false; // State update should precede external call
+
+        emit FundsWithdrawn(balance, block.timestamp);
+    }
+}
